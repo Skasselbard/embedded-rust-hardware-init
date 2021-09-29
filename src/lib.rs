@@ -1,125 +1,77 @@
-#![no_std]
-#![feature(alloc_error_handler)]
+#![feature(proc_macro_span)]
+mod config;
 
-extern crate alloc;
+mod devices;
+mod generation;
+mod types;
+// use embedded_rust::device::stm32f1xx::{Gpio, TriggerEdge};
+use config::Config;
+use proc_macro::TokenStream;
+use quote::quote;
+use syn::{parse_macro_input, ItemStruct};
+use types::*;
 
-macro_rules! to_target_endianess {
-    ($int:expr) => {
-        if cfg!(target_endian = "big") {
-            $int.to_be_bytes()
-        } else {
-            $int.to_le_bytes()
+#[proc_macro_attribute]
+pub fn device_config(attr: TokenStream, item: TokenStream) -> TokenStream {
+    let config = parse_yaml(&attr);
+    let strukt = parse_macro_input!(item as ItemStruct);
+    let struct_name = strukt.ident.clone();
+    let statiks = generation::component_statics(&config);
+    let static_init = generation::static_init(&config);
+    let heap_size = config.sys().heap_size();
+
+    let init_stmts = config.init_statements();
+    let interrupt_unmasks = config.interrupt_unmasks();
+    quote!(
+        #strukt
+        impl #struct_name{
+            #[inline]
+            fn init(){
+                #(#init_stmts)*
+                #(#statiks)*
+                #static_init
+                unsafe{
+                    Runtime::init(
+                        #heap_size,
+                        SYS_ARRAY.as_mut().unwrap(),
+                        INPUT_PINS_ARRAY.as_mut().unwrap(),
+                        OUTPUT_PINS_ARRAY.as_mut().unwrap(),
+                        PWM_PINS_ARRAY.as_mut().unwrap(),
+                        CHANNELS_ARRAY.as_mut().unwrap(),
+                        SERIALS_ARRAY.as_mut().unwrap(),
+                        TIMERS_ARRAY.as_mut().unwrap(),
+                    ).expect("Runtime initialization failed");
+                }
+            }
+            #[inline]
+            fn get_resource(
+                uri: &str
+            ) -> Result<embedded_rust::resources::ResourceID, embedded_rust::resources::ResourceError>{
+                embedded_rust::Runtime::get().get_resource(uri)
+            }
+            #[inline]
+            fn run() -> !{
+                unsafe{
+                    #(#interrupt_unmasks)*
+                }
+                embedded_rust::Runtime::get().run()
+            }
         }
-    };
+    )
+    .into()
 }
 
-macro_rules! from_target_endianess {
-    ($int_type:ty, $array:expr) => {{
-        use core::convert::TryInto;
-        match $array.try_into() {
-            Ok(value) => Ok(if cfg!(target_endian = "big") {
-                <$int_type>::from_be_bytes(value)
-            } else {
-                <$int_type>::from_le_bytes(value)
-            }),
-            Err(e) => Err(e),
-        }
-    }};
-}
-
-mod executor;
-mod logging;
-mod task;
-mod utilities;
-
-#[macro_use]
-pub mod device;
-
-pub mod events;
-pub mod io;
-pub mod resources;
-pub mod schemes;
-
-pub use task::Task;
-
-use alloc::boxed::Box;
-use core::task::Waker;
-use core::{
-    future::Future,
-    pin::Pin,
-    task::{Context, Poll},
-};
-use events::Event;
-use resources::{Resource, ResourceError, ResourceID, Resources};
-
-pub struct Runtime {
-    resources: Resources,
-    executor: executor::Executor,
-}
-
-#[non_exhaustive]
-#[derive(Debug, Copy, Clone, PartialEq, Eq)]
-pub enum RuntimeError {
-    UninitializedAccess,
-    MultipleInitializations,
-    ResourceNotFound,
-    TaskQueueIsFull,
-    UriParseError,
-}
-
-impl Runtime {
-    pub fn init(
-        heap_size: usize,
-        sys: &'static mut [&'static mut dyn Resource],
-        input_pins: &'static mut [&'static mut dyn Resource],
-        output_pins: &'static mut [&'static mut dyn Resource],
-        pwm: &'static mut [&'static mut dyn Resource],
-        channels: &'static mut [&'static mut dyn Resource],
-        serials: &'static mut [&'static mut dyn Resource],
-        timers: &'static mut [&'static mut dyn Resource],
-    ) -> Result<&'static mut Self, RuntimeError> {
-        let inner = Self::get_inner();
-        if let Some(_) = inner {
-            return Err(RuntimeError::MultipleInitializations);
-        };
-        device::init_heap(device::heap_bottom(), heap_size);
-        logging::init().expect("log initialization failed");
-        inner.replace(Self {
-            executor: executor::Executor::new(),
-            resources: Resources::new(sys, input_pins, output_pins, pwm, channels, serials, timers),
-        });
-        let rt = Self::get();
-        Ok(rt)
-    }
-    #[inline]
-    fn get_inner() -> &'static mut Option<Runtime> {
-        static mut RUNTIME: Option<Runtime> = None;
-        unsafe { &mut RUNTIME }
-    }
-    #[inline]
-    pub fn get() -> &'static mut Runtime {
-        Self::get_inner().as_mut().expect("uninitialized runtime")
-    }
-    #[inline]
-    pub(crate) fn get_resources() -> &'static mut Resources {
-        &mut Self::get_inner()
-            .as_mut()
-            .expect("uninitialized runtime")
-            .resources
-    }
-    pub fn get_resource(&'static mut self, uri: &str) -> Result<ResourceID, ResourceError> {
-        self.resources.get_resource(uri)
-    }
-    pub fn run(&'static mut self) -> ! {
-        loop {
-            self.executor.run();
-            crate::device::sleep();
-        }
-    }
-    pub fn spawn_task(&'static mut self, task: Task) {
-        self.executor.spawn(task);
-    }
-    pub(crate) fn register_waker(&'static mut self, trigger: &Event, waker: &Waker) {
-        self.executor.register_waker(trigger, waker)
-    }
+pub(crate) fn parse_yaml(attributes: &TokenStream) -> Config {
+    let mut att_folded = Vec::new();
+    // extract all spans from the attribute token stream
+    attributes
+        .clone()
+        .into_iter()
+        .for_each(|elem| att_folded.push(elem.span()));
+    // join all spans
+    let att_span = att_folded
+        .iter()
+        .fold(att_folded[0], |acc, elem| acc.join(*elem).unwrap());
+    let device_definition = att_span.source_text().expect("msg");
+    serde_yaml::from_str(&device_definition).expect("ParsingError")
 }
