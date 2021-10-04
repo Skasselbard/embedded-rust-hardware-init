@@ -131,9 +131,6 @@ impl DeviceGeneration for Generator {
             use stm32f1xx_hal::pwm::{self, PwmChannel};
             use stm32f1xx_hal::pac;
             use stm32f1xx_hal::serial::{self, Config};
-            use embedded_rust::resources::{Resource, Pin, InputPin, OutputPin, PWMPin, Serial};
-            use embedded_rust::device::{Port, Channel, SerialID};
-            use embedded_rust::Runtime;
         )
     }
     fn generate_device_init(&self) -> std::vec::Vec<syn::Stmt> {

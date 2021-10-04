@@ -37,7 +37,7 @@ impl types::Gpio for StmGpio {
         let pin_type = format_ident!("{}", self.pin().to_type());
         if let PinMode::Analog = self.mode() {
             parse_str(&format!(
-                "gpio::{}::{}<gpio::Analog>",
+                "stm32f1xx_hal::gpio::{}::{}<stm32f1xx_hal::gpio::Analog>",
                 channel_name, pin_type
             ))
             .unwrap()
@@ -45,7 +45,7 @@ impl types::Gpio for StmGpio {
             let direction = format_ident!("{}", self.direction().to_type_string());
             let mode = format_ident!("{}", self.mode().to_type_string());
             parse_str(&format!(
-                "gpio::{}::{}<gpio::{}<gpio::{}>>",
+                "stm32f1xx_hal::gpio::{}::{}<stm32f1xx_hal::gpio::{}<stm32f1xx_hal::gpio::{}>>",
                 channel_name, pin_type, direction, mode
             ))
             .unwrap()

@@ -131,41 +131,6 @@ impl Config {
             .partition(|gpio| gpio.direction() == &Direction::Output);
         in_pins
     }
-    pub fn input_channels(&self) -> Vec<Expr> {
-        self.input_pins()
-            .iter()
-            .map(|gpio| gpio.pin().channel_constructor())
-            .collect()
-    }
-    pub fn input_ports(&self) -> Vec<Expr> {
-        self.input_pins()
-            .iter()
-            .map(|gpio| gpio.pin().port_constructor())
-            .collect()
-    }
-    pub fn input_constructors(&self) -> Vec<Expr> {
-        let channels = self.input_channels().into_iter();
-        let ports = self.input_ports().into_iter();
-        let idents = self.input_idents().into_iter();
-        let mut constructors = vec![];
-        for (channel, (port, ident)) in channels.zip(ports.zip(idents)) {
-            constructors.push(parse_quote!(InputPin::new(Pin::new(#channel, #port), #ident)));
-        }
-        constructors
-    }
-
-    pub fn output_channels(&self) -> Vec<Expr> {
-        self.output_pins()
-            .iter()
-            .map(|gpio| gpio.pin().channel_constructor())
-            .collect()
-    }
-    pub fn output_ports(&self) -> Vec<Expr> {
-        self.output_pins()
-            .iter()
-            .map(|gpio| gpio.pin().port_constructor())
-            .collect()
-    }
     pub fn input_idents(&self) -> Vec<Ident> {
         self.input_pins()
             .iter()
@@ -184,16 +149,6 @@ impl Config {
     pub fn output_tys(&self) -> Vec<Type> {
         self.output_pins().iter().map(|gpio| gpio.ty()).collect()
     }
-    pub fn output_constructors(&self) -> Vec<Expr> {
-        let channels = self.output_channels().into_iter();
-        let ports = self.output_ports().into_iter();
-        let idents = self.output_idents().into_iter();
-        let mut constructors = vec![];
-        for (channel, (port, ident)) in channels.zip(ports.zip(idents)) {
-            constructors.push(parse_quote!(OutputPin::new(Pin::new(#channel, #port), #ident)));
-        }
-        constructors
-    }
 
     fn pwm_pins(&self) -> Vec<&dyn Pin> {
         self.pwm().iter().map(|pwm| pwm.pins()).flatten().collect()
@@ -204,32 +159,8 @@ impl Config {
             .map(|pin| format_ident!("{}", pin.name()))
             .collect()
     }
-    pub fn pwm_channels(&self) -> Vec<Expr> {
-        self.pwm_pins()
-            .iter()
-            .map(|pin| pin.channel_constructor())
-            .collect()
-    }
-    pub fn pwm_ports(&self) -> Vec<Expr> {
-        self.pwm_pins()
-            .iter()
-            .map(|pin| pin.port_constructor())
-            .collect()
-    }
     pub fn pwm_tys(&self) -> Vec<Type> {
         self.pwm().iter().map(|pwm| pwm.tys()).flatten().collect()
-    }
-    pub fn pwm_constructors(&self) -> Vec<Expr> {
-        let channels = self.pwm_channels().into_iter();
-        let ports = self.pwm_ports().into_iter();
-        let idents = self.pwm_idents().into_iter();
-        let mut constructors = vec![];
-        for (channel, (port, ident)) in channels.zip(ports.zip(idents)) {
-            constructors.push(parse_quote!(
-                   PWMPin::new(Pin::new(#channel , #port), #ident)
-            ))
-        }
-        constructors
     }
     fn pwm_gpios(&self) -> Vec<Box<dyn Gpio>> {
         self.pwm()

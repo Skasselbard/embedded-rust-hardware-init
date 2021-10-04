@@ -3,12 +3,8 @@
 
 extern crate alloc;
 
-// use cortex_m_semihosting::hprintln;
+use embedded_rust_hardware_init::device_config;
 
-use cortex_m_rt::entry;
-use embedded_rust::io::{AsyncReadExt, AsyncWriteExt};
-use embedded_rust::Task;
-use embedded_rust_macros::*;
 #[device_config(
     Stm32f1xx:
       sys:
@@ -17,22 +13,19 @@ use embedded_rust_macros::*;
       gpios:
         - ["PA0", "input", "pull_up", "falling"]
         - ["PC13", "output", "push_pull"]
-      pwm:
-        - timer: "Tim2"
-          pins: ["PA1"]
-          frequency: [10, "khz"]
-      serial:
-        - usart1:
-            tx: "PB6"
-            rx: "PB7"
-            baud: 9600
+      // pwm:
+      //   - timer: "Tim2"
+      //     pins: ["PA1"]
+      //     frequency: [10, "khz"]
+      // serial:
+      //   - usart1:
+      //       tx: "PB6"
+      //       rx: "PB7"
+      //       baud: 9600
 )]
 struct BluePill;
-#[entry]
 fn main() -> ! {
-    BluePill::init();
-    Task::new(test_task()).spawn();
-    BluePill::run();
+    loop {}
 }
 
 pub async fn test_task() {

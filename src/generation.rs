@@ -13,7 +13,7 @@ pub trait DeviceGeneration {
     fn generate_imports(&self) -> Vec<Stmt>;
     /// Here you can add functions to prepare the general device
     /// and introduce variable names for later use
-    /// For example the stm32f1xx boards need acces to a peripheral
+    /// For example the stm32f1xx boards need access to a peripheral
     /// singleton and initialized flash.
     fn generate_device_init(&self) -> Vec<Stmt>;
     /// In the stm32f1 hal, each pin channel ('A' to 'E' in the pin types PAX to PEX)
@@ -25,7 +25,7 @@ pub trait DeviceGeneration {
 }
 pub trait GpioGeneration {
     /// In this function all pins should be introduced with a let binding.
-    /// The identifiers for the pins should be generatet with the identifier
+    /// The identifiers for the pins should be generated with the identifier
     /// function of the Gpio trait (or rather its Component trait bound).
     /// The identifiers will later be used to populate the global data statics.
     ///
@@ -39,7 +39,7 @@ pub trait GpioGeneration {
         stmts
     }
     /// This function should return all gpio interrupts that should be enabled.
-    /// For the Stm32f1 boards this would be the apropriate Exti_X (External
+    /// For the Stm32f1 boards this would be the appropriate Exti_X (External
     /// Interrupt) lines
     fn interrupts(&self, gpios: &Vec<Box<dyn Gpio>>) -> Vec<Stmt>;
 }
@@ -69,39 +69,13 @@ pub trait SysGeneration {
 
 //TODO: shorten
 macro_rules! define_static {
-    ($name:expr, (), $types:expr) => {{
+    ($static_name:expr, $types:expr, $identifiers:expr) => {{
         let tys: &Vec<Type> = $types;
-        let len: usize = tys.len();
-        let ident = quote::format_ident!("{}", $name);
-        let array_ident = quote::format_ident!("{}_ARRAY", $name);
+        let static_name = quote::format_ident!("{}", $static_name);
+        let identifiers: &Vec<Ident> = $identifiers;
         let src: Vec<Stmt> = syn::parse_quote!(
-            static mut #ident: Option<(#(#tys,)*)> = None;
-            static mut #array_ident: Option<[&'static mut dyn Resource; #len]> = None;
-        );
-        src
-    }};
-    ($name:expr, $resourceType:expr, $types:expr) => {{
-        let tys: &Vec<Type> = $types;
-        let len: usize = tys.len();
-        let resource_type = quote::format_ident!("{}", $resourceType);
-        let ident = quote::format_ident!("{}", $name);
-        let array_ident = quote::format_ident!("{}_ARRAY", $name);
-        let src: Vec<Stmt> = syn::parse_quote!(
-            static mut #ident: Option<(#(#resource_type<#tys>,)*)> = None;
-            static mut #array_ident: Option<[&'static mut dyn Resource; #len]> = None;
-        );
-        src
-    }};
-    ($name:expr, $serialType:expr, $rx_tys:expr, $tx_tys:expr) => {{
-        let rx_tys: &Vec<Type> = $rx_tys;
-        let tx_tys: &Vec<Type> = $tx_tys;
-        let len: usize = rx_tys.len();
-        let resource_type = quote::format_ident!("{}", $serialType);
-        let ident = quote::format_ident!("{}", $name);
-        let array_ident = quote::format_ident!("{}_ARRAY", $name);
-        let src: Vec<Stmt> = syn::parse_quote!(
-            static mut #ident: Option<(#(#resource_type<#tx_tys, #rx_tys>,)*)> = None;
-            static mut #array_ident: Option<[&'static mut dyn Resource; #len]> = None;
+            static mut #static_name: MaybeUninit<(#(#tys,)*)> = MaybeUninit::uninit();
+            unsafe{#static_name.write((#(#identifiers,)*))};
         );
         src
     }};
@@ -109,91 +83,54 @@ macro_rules! define_static {
 
 pub(crate) fn component_statics(config: &Config) -> Vec<Stmt> {
     let mut stmts = vec![];
-    stmts.append(&mut define_static!("SYS", (), &vec![]));
     stmts.append(&mut define_static!(
         "INPUT_PINS",
-        "InputPin",
-        &config.input_tys()
+        &config.input_tys(),
+        &config.input_idents()
     ));
     stmts.append(&mut define_static!(
         "OUTPUT_PINS",
-        "OutputPin",
-        &config.output_tys()
+        &config.output_tys(),
+        &config.output_idents()
     ));
-    stmts.append(&mut define_static!("PWM_PINS", "PWMPin", &config.pwm_tys()));
-    stmts.append(&mut define_static!("CHANNELS", (), &vec![]));
     stmts.append(&mut define_static!(
-        "SERIALS",
-        "Serial",
-        &config.serial_rx_tys(),
-        &config.serial_tx_tys()
+        "PWM_PINS",
+        &config.pwm_tys(),
+        &config.pwm_idents()
     ));
-    stmts.append(&mut define_static!("TIMERS", (), &vec![]));
+    stmts.append(&mut define_static!("CHANNELS", &vec![], &vec![]));
+    // stmts.append(&mut define_static!(
+    //     "SERIALS",
+    //     "Serial",
+    //     &config.serial_rx_tys(),
+    //     &config.serial_tx_tys()
+    // ));
+    stmts.append(&mut define_static!("TIMERS", &vec![], &vec![]));
     stmts.into()
 }
 
-macro_rules! init_static {
-    ($name:expr, $idents:expr, $constructors:expr) => {{
-        let name: &str = $name;
-        let idents: &Vec<Ident> = $idents;
-        let constructors: &Vec<Expr> = $constructors;
-        let index = (0..idents.len()).map(syn::Index::from);
-        let ident_upper = quote::format_ident!("{}", name.to_uppercase());
-        let ident_lower = quote::format_ident!("{}", name.to_lowercase());
-        let array_ident = quote::format_ident!("{}_ARRAY", name.to_uppercase());
-        let src: Vec<Stmt> = syn::parse_quote!(
-            #ident_upper = Some((#(#constructors,)*));
-            let #ident_lower = #ident_upper.as_mut().unwrap();
-            #array_ident = Some([#(&mut #ident_lower.#index,)*]);
-        );
-        src
-    }};
+pub(crate) fn init_retutn_statement(config: &Config) -> ExprUnsafe {
+    syn::parse_quote!(unsafe {
+        (
+            INPUT_PINS.assume_init(),
+            OUTPUT_PINS.assume_init(),
+            PWM_PINS.assume_init(),
+            CHANNELS.assume_init(),
+            TIMERS.assume_init(),
+        )
+    })
 }
-pub(crate) fn static_init(config: &Config) -> ExprUnsafe {
-    let mut inits: Vec<Stmt> = vec![];
-    inits.append(&mut init_static!("SYS", &vec![], &vec![]));
-    inits.append(&mut init_static!(
-        "INPUT_PINS",
-        &config.input_idents(),
-        &config.input_constructors()
-    ));
-    inits.append(&mut init_static!(
-        "OUTPUT_PINS",
-        &config.output_idents(),
-        &config.output_constructors()
-    ));
-    inits.append(&mut init_static!(
-        "PWM_PINS",
-        &config.pwm_idents(),
-        &config.pwm_constructors()
-    ));
-    inits.append(&mut init_static!("CHANNELS", &vec![], &vec![]));
-    inits.append(&mut init_static!(
-        "SERIALS",
-        &config.serial_idents(),
-        &config.serial_constructors()
-    ));
-    inits.append(&mut init_static!("TIMERS", &vec![], &vec![]));
-
-    let serial_indizes = (0..config.serial_idents().len()).map(syn::Index::from);
-    parse_quote!(
-        unsafe{
-           #(#inits)*
-           // Also the init function of the serials has to be called
-           #(SERIALS.as_mut().unwrap().#serial_indizes.init();)*
-        }
-    )
-}
-
-// TODO: integrate
-fn sys_objects(config: &Config) -> Vec<Expr> {
-    let heapsize = config.sys().heap_size();
-    let sys_clock = config.sys().sys_clock();
-    let heap_obj = parse_str(&format!("Heap::new({})", heapsize)).unwrap();
-    if let Some(sys_clock) = sys_clock {
-        let sys_clock_obj = parse_str(&format!("SysClock::new({})", sys_clock)).unwrap();
-        vec![heap_obj, sys_clock_obj]
-    } else {
-        vec![heap_obj]
-    }
+pub(crate) fn init_retutn_type(config: &Config) -> Type {
+    let input_types = &config.input_tys();
+    let output_types = &config.output_tys();
+    let pwm_types = &config.pwm_tys();
+    let channels_types: &Vec<Type> = &vec![];
+    let timer_types: &Vec<Type> = &vec![];
+    syn::parse_quote!((
+        (#(#input_types, )*),
+        (#(#output_types,)*),
+        (#(#pwm_types,)*),
+        (#(#channels_types,)*),
+        (#(#timer_types,)*),
+    ))
 }

@@ -1,3 +1,9 @@
+[workspace]
+
+members = [
+  "programs",
+]
+
 [package]
 authors = ["\"tom\" <\"tom.meyer89@gmail.com\">"]
 edition = "2018"
