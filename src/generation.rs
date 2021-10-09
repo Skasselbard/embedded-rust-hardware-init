@@ -1,5 +1,5 @@
 use crate::{config::Config, types::Serial, Frequency, Gpio, PWMInterface};
-use syn::{parse_quote, parse_str, Expr, ExprUnsafe, Ident, Stmt, Type};
+use syn::{ExprUnsafe, Ident, Stmt, Type};
 
 /// The Generator trait is used to determine the proper generation functions
 /// It is just a meta trait that combines all special generation traits.
@@ -67,15 +67,22 @@ pub trait SysGeneration {
     fn generate_clock(&self, sys_frequency: &Option<Frequency>) -> Vec<Stmt>;
 }
 
-//TODO: shorten
 macro_rules! define_static {
-    ($static_name:expr, $types:expr, $identifiers:expr) => {{
+    ($static_name:expr, $types:expr) => {{
         let tys: &Vec<Type> = $types;
+        let static_name = quote::format_ident!("{}", $static_name);
+        let src: Vec<Stmt> = syn::parse_quote!(
+            static mut #static_name: MaybeUninit<(#(#tys,)*)> = MaybeUninit::uninit();
+        );
+        src
+    }};
+}
+macro_rules! init_static {
+    ($static_name:expr, $identifiers:expr) => {{
         let static_name = quote::format_ident!("{}", $static_name);
         let identifiers: &Vec<Ident> = $identifiers;
         let src: Vec<Stmt> = syn::parse_quote!(
-            static mut #static_name: MaybeUninit<(#(#tys,)*)> = MaybeUninit::uninit();
-            unsafe{#static_name.write((#(#identifiers,)*))};
+            #static_name.write((#(#identifiers,)*));
         );
         src
     }};
@@ -83,54 +90,67 @@ macro_rules! define_static {
 
 pub(crate) fn component_statics(config: &Config) -> Vec<Stmt> {
     let mut stmts = vec![];
-    stmts.append(&mut define_static!(
-        "INPUT_PINS",
-        &config.input_tys(),
-        &config.input_idents()
-    ));
-    stmts.append(&mut define_static!(
-        "OUTPUT_PINS",
-        &config.output_tys(),
-        &config.output_idents()
-    ));
-    stmts.append(&mut define_static!(
-        "PWM_PINS",
-        &config.pwm_tys(),
-        &config.pwm_idents()
-    ));
-    stmts.append(&mut define_static!("CHANNELS", &vec![], &vec![]));
+    stmts.append(&mut define_static!("INPUT_PINS", &config.input_tys()));
+    stmts.append(&mut define_static!("OUTPUT_PINS", &config.output_tys()));
+    stmts.append(&mut define_static!("PWM_PINS", &config.pwm_tys()));
+    stmts.append(&mut define_static!("CHANNELS", &vec![]));
     // stmts.append(&mut define_static!(
     //     "SERIALS",
     //     "Serial",
     //     &config.serial_rx_tys(),
     //     &config.serial_tx_tys()
     // ));
-    stmts.append(&mut define_static!("TIMERS", &vec![], &vec![]));
+    stmts.append(&mut define_static!("TIMERS", &vec![]));
     stmts.into()
 }
 
-pub(crate) fn init_retutn_statement(config: &Config) -> ExprUnsafe {
+pub(crate) fn init_return_statement(config: &Config) -> ExprUnsafe {
+    let input_index = (0..config.input_idents().len()).map(syn::Index::from);
+    let output_index = (0..config.output_idents().len()).map(syn::Index::from);
+    let pwm_index = (0..config.pwm_idents().len()).map(syn::Index::from);
+    // let channel_index = (0..config.channel_idents().len()).map(syn::Index::from);
+    // let timer_index = (0..config.timer_idents().len()).map(syn::Index::from);
+    let input_idents = config.input_idents();
+    let output_idents = config.output_idents();
+    let pwm_idents = config.pwm_idents();
+    let channel_idents: Vec<Ident> = vec![];
+    let timer_idents: Vec<Ident> = vec![];
+
     syn::parse_quote!(unsafe {
+        // let mut ip = INPUT_PINS.assume_init();
+        // let mut op = OUTPUT_PINS.assume_init();
+        // let mut pwm = PWM_PINS.assume_init();
+        // // let mut chan = CHANNELS.assume_init(),
+        // // let mut tim = TIMERS.assume_init(),
+        // (
+        //     &mut (#(ip.#input_index,)*),
+        //     &mut (#(op.#output_index,)*),
+        //     &mut (#(pwm.#pwm_index,)*),
+        // )
         (
-            INPUT_PINS.assume_init(),
-            OUTPUT_PINS.assume_init(),
-            PWM_PINS.assume_init(),
-            CHANNELS.assume_init(),
-            TIMERS.assume_init(),
+            // TODO: MaybeUninit::write() muss nach hier
+            // INPUT_PINS.assume_init(),
+            // OUTPUT_PINS.assume_init(),
+            // PWM_PINS.assume_init(),
+            (INPUT_PINS.write((#(#input_idents,)*))),
+            (OUTPUT_PINS.write((#(#output_idents,)*))),
+            (PWM_PINS.write((#(#pwm_idents,)*))),
+            // (CHANNELS.write((#(#channel_idents,)*))),
+            // (TIMERS.write((#(#timer_idents,)*))),
         )
     })
 }
-pub(crate) fn init_retutn_type(config: &Config) -> Type {
+pub(crate) fn init_return_type(config: &Config) -> Type {
     let input_types = &config.input_tys();
     let output_types = &config.output_tys();
     let pwm_types = &config.pwm_tys();
-    let channels_types: &Vec<Type> = &vec![];
-    let timer_types: &Vec<Type> = &vec![];
+    // let channels_types: &Vec<Type> = &vec![];
+    // let timer_types: &Vec<Type> = &vec![];
     syn::parse_quote!((
-        (#(#input_types, )*),
-        (#(#output_types,)*),
-        (#(#pwm_types,)*),
-        (#(#channels_types,)*),
-        (#(#timer_types,)*),
+        &'static mut (#(#input_types, )*),
+        &'static mut (#(#output_types,)*),
+        &'static mut (#(#pwm_types,)*),
+        // (#(&'static mut #channels_types,)*),
+        // (#(&'static mut #timer_types,)*),
     ))
 }

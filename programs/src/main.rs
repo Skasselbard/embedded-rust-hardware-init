@@ -3,6 +3,9 @@
 
 extern crate alloc;
 
+use core::mem::MaybeUninit;
+
+use embedded_rust_h2al::{Component, ComponentsBuilder};
 use embedded_rust_hardware_init::device_config;
 
 #[device_config(
@@ -24,7 +27,13 @@ use embedded_rust_hardware_init::device_config;
       //       baud: 9600
 )]
 struct BluePill;
+
 fn main() -> ! {
+    static mut ca: [MaybeUninit<Component>; 2] = ComponentsBuilder::allocate_array();
+    let components = BluePill::init();
+    let mut cb = ComponentsBuilder::new(unsafe { &mut ca });
+    cb.add_input_pin(&mut components.0 .0);
+    cb.add_output_pin(&mut components.1 .0);
     loop {}
 }
 

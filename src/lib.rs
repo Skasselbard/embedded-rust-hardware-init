@@ -15,11 +15,11 @@ pub fn device_config(attr: TokenStream, item: TokenStream) -> TokenStream {
     let config = parse_yaml(&attr);
     let item_struct = parse_macro_input!(item as ItemStruct);
     let struct_name = item_struct.ident.clone();
-    let statics = generation::component_statics(&config);
+    let statics_initialization = generation::component_statics(&config);
 
     let init_statements = config.init_statements();
-    let return_statement = generation::init_retutn_statement(&config);
-    let return_type = generation::init_retutn_type(&config);
+    let return_statement = generation::init_return_statement(&config);
+    let return_type = generation::init_return_type(&config);
     let interrupt_unmasks = config.interrupt_unmasks();
     quote!(
         #item_struct
@@ -27,7 +27,7 @@ pub fn device_config(attr: TokenStream, item: TokenStream) -> TokenStream {
             fn init() -> #return_type{
                 use core::mem::MaybeUninit;
                 #(#init_statements)*
-                #(#statics)*
+                #(#statics_initialization)*
                 #return_statement
             }
             #[inline]

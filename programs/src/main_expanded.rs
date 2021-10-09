@@ -6,23 +6,23 @@ use core::prelude::rust_2018::*;
 #[macro_use]
 extern crate core;
 extern crate alloc;
+use core::mem::MaybeUninit;
+use embedded_rust_h2al::{Component, ComponentsBuilder};
 use embedded_rust_hardware_init::device_config;
 struct BluePill;
 impl BluePill {
     fn init() -> (
-        (
+        &'static mut (
             stm32f1xx_hal::gpio::gpioa::PA0<
                 stm32f1xx_hal::gpio::Input<stm32f1xx_hal::gpio::PullUp>,
             >,
         ),
-        (
+        &'static mut (
             stm32f1xx_hal::gpio::gpioc::PC13<
                 stm32f1xx_hal::gpio::Output<stm32f1xx_hal::gpio::PushPull>,
             >,
         ),
-        (),
-        (),
-        (),
+        &'static mut (),
     ) {
         use core::mem::MaybeUninit;
         use stm32f1xx_hal::prelude::*;
@@ -50,26 +50,19 @@ impl BluePill {
                 stm32f1xx_hal::gpio::Input<stm32f1xx_hal::gpio::PullUp>,
             >,
         )> = MaybeUninit::uninit();
-        unsafe { INPUT_PINS.write((pa0,)) };
         static mut OUTPUT_PINS: MaybeUninit<(
             stm32f1xx_hal::gpio::gpioc::PC13<
                 stm32f1xx_hal::gpio::Output<stm32f1xx_hal::gpio::PushPull>,
             >,
         )> = MaybeUninit::uninit();
-        unsafe { OUTPUT_PINS.write((pc13,)) };
         static mut PWM_PINS: MaybeUninit<()> = MaybeUninit::uninit();
-        unsafe { PWM_PINS.write(()) };
         static mut CHANNELS: MaybeUninit<()> = MaybeUninit::uninit();
-        unsafe { CHANNELS.write(()) };
         static mut TIMERS: MaybeUninit<()> = MaybeUninit::uninit();
-        unsafe { TIMERS.write(()) };
         unsafe {
             (
-                INPUT_PINS.assume_init(),
-                OUTPUT_PINS.assume_init(),
-                PWM_PINS.assume_init(),
-                CHANNELS.assume_init(),
-                TIMERS.assume_init(),
+                (INPUT_PINS.write((pa0,))),
+                (OUTPUT_PINS.write((pc13,))),
+                (PWM_PINS.write(())),
             )
         }
     }
@@ -81,6 +74,11 @@ impl BluePill {
     }
 }
 fn main() -> ! {
+    static mut ca: [MaybeUninit<Component>; 2] = ComponentsBuilder::allocate_array();
+    let components = BluePill::init();
+    let mut cb = ComponentsBuilder::new(unsafe { &mut ca });
+    cb.add_input_pin(&mut components.0 .0);
+    cb.add_output_pin(&mut components.1 .0);
     loop {}
 }
 pub async fn test_task() {
