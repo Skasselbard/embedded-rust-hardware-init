@@ -2,12 +2,13 @@ use core::panic;
 
 use yaml_rust::Yaml;
 
-use super::DeviceConfig;
+use super::{DeviceConfig, Hertz};
 
+#[derive(Debug)]
 pub struct Stm32f1xxPeripherals {
     gpio: Gpios,
-    timer: Vec<()>,
-    pwm: Vec<()>,
+    timer: Vec<Timer>,
+    pwm: Vec<PWM>,
     serial: Vec<()>,
 }
 
@@ -16,23 +17,99 @@ impl Stm32f1xxPeripherals {
         Self {
             gpio: Gpios {
                 input: yaml["gpio"]["input"]
-                    .clone()
-                    .into_iter()
-                    .map(|yaml| Gpio::input_from_yaml(&yaml))
-                    .collect(),
+                    .as_vec()
+                    .map(|ins| {
+                        ins.iter()
+                            .map(|yaml| Gpio::input_from_yaml(&yaml))
+                            .collect()
+                    })
+                    .unwrap_or_default(),
                 output: yaml["gpio"]["output"]
-                    .clone()
-                    .into_iter()
-                    .map(|yaml| Gpio::output_from_yaml(&yaml))
-                    .collect(),
+                    .as_vec()
+                    .map(|outs| {
+                        outs.iter()
+                            .map(|yaml| Gpio::output_from_yaml(&yaml))
+                            .collect()
+                    })
+                    .unwrap_or_default(),
             },
-            timer: vec![],
-            pwm: vec![],
+            timer: yaml["timer"]
+                .as_vec()
+                .map(|timers| timers.iter().map(|timer| Timer::from_yaml(timer)).collect())
+                .unwrap_or_default(),
+            pwm: yaml["pwm"]
+                .as_vec()
+                .map(|pwms| pwms.iter().map(|pwm| PWM::from_yaml(pwm)).collect())
+                .unwrap_or_default(),
             serial: vec![],
         }
     }
 }
 
+#[derive(Debug)]
+pub struct PWM {
+    timer: Timer,
+    pins: Vec<(usize, Port)>,
+    frequency: Option<Hertz>,
+}
+
+impl PWM {
+    fn from_yaml(yaml: &Yaml) -> Self {
+        let config = yaml.as_hash().expect("Unexpected input pwm format");
+        let mut timer_name = None;
+        for entry in config {
+            match entry {
+                (k, Yaml::Null) => match timer_name {
+                    Some(_) => unreachable!(),
+                    None => {
+                        timer_name = Some(k);
+                        break;
+                    }
+                },
+                _ => {}
+            }
+        }
+        Self {
+            timer: Timer::from_yaml(timer_name.expect("no timer found for pwm")),
+            pins: yaml["pins"]
+                .clone()
+                .into_iter()
+                .map(|pin| Gpio::parse_pin(&pin.as_str()))
+                .collect(),
+            frequency: yaml["freq"].as_str().map(|f| Hertz::from_str(f)),
+        }
+    }
+}
+
+#[derive(Debug)]
+struct Timer {
+    id: TimerID,
+}
+#[derive(Debug)]
+enum TimerID {
+    Tim1,
+    Tim2,
+    Tim3,
+}
+
+impl Timer {
+    fn from_yaml(yaml: &Yaml) -> Self {
+        let id = match yaml
+            .as_str()
+            .expect("Unable to parse timer")
+            .to_lowercase()
+            .as_str()
+        {
+            "tim1" => TimerID::Tim1,
+            "tim2" => TimerID::Tim2,
+            "tim3" => TimerID::Tim3,
+            other => panic!("Unknown timer '{}'", other),
+        };
+        Self { id }
+    }
+}
+
+#[derive(Debug)]
 struct Gpios {
     input: Vec<Gpio>,
     output: Vec<Gpio>,
@@ -53,7 +130,7 @@ impl Gpio {
             match entry {
                 (Yaml::String(k), Yaml::Null) => match pin_name {
                     Some(_) => unreachable!(),
-                    None => pin_name = Some(k),
+                    None => pin_name = Some(k.as_str()),
                 },
                 _ => {}
             }
@@ -97,7 +174,7 @@ impl Gpio {
                         "Expected a single mode element for output gpio key (e.g. pb5: push_pull"
                     ),
                     None => {
-                        pin_name = Some(k);
+                        pin_name = Some(k.as_str());
                         pin_mode = Some(v)
                     }
                 },
@@ -123,7 +200,7 @@ impl Gpio {
             interrupt_mode: InterruptMode::None,
         }
     }
-    fn parse_pin(key: &Option<&String>) -> (usize, Port) {
+    fn parse_pin(key: &Option<&str>) -> (usize, Port) {
         let string = key.expect("could not parse pin name").to_lowercase();
         let string = match string.strip_prefix("p") {
             Some(s) => s,
