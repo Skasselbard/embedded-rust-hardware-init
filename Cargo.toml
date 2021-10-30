@@ -10,9 +10,5 @@ proc-macro = true
 [dependencies]
 project-root = "0.2.2"
 quote = "1.0.7"
-serde = "1.0.114"
-serde-aux = "2.3.0"
-serde_derive = "1.0.114"
-serde_yaml = "0.8.20"
 syn = {version = "1.0.38", features = ["full"]}
 yaml-rust = "0.4"
