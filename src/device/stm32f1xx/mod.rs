@@ -1,20 +1,21 @@
 use core::panic;
-
 use yaml_rust::Yaml;
 
-use super::{DeviceConfig, Hertz};
+mod generation;
+
+use super::{Baud, DeviceConfig, Hertz};
 
 #[derive(Debug)]
 pub struct Stm32f1xxPeripherals {
     gpio: Gpios,
     timer: Vec<Timer>,
     pwm: Vec<PWM>,
-    serial: Vec<()>,
+    serial: Vec<Serial>,
 }
 
 impl Stm32f1xxPeripherals {
     pub fn from_yaml(yaml: &Yaml) -> Self {
-        Self {
+        let peripherals = Self {
             gpio: Gpios {
                 input: yaml["gpio"]["input"]
                     .as_vec()
@@ -41,7 +42,109 @@ impl Stm32f1xxPeripherals {
                 .as_vec()
                 .map(|pwms| pwms.iter().map(|pwm| PWM::from_yaml(pwm)).collect())
                 .unwrap_or_default(),
-            serial: vec![],
+            serial: yaml["serial"]
+                .as_vec()
+                .map(|serials| {
+                    serials
+                        .iter()
+                        .map(|serial| Serial::from_yaml(serial))
+                        .collect()
+                })
+                .unwrap_or_default(),
+        };
+        peripherals.check();
+        peripherals
+    }
+    fn check(&self) {
+        // TODO: check that timers are captured only once
+        // TODO: check gpio and peripheral combination is possible
+    }
+    fn used_gpios(&self) -> Vec<(Pin, Port)> {
+        let mut inputs: Vec<(Pin, Port)> = self
+            .gpio
+            .input
+            .iter()
+            .map(|gpio| (gpio.pin, gpio.port))
+            .collect::<Vec<(Pin, Port)>>();
+        let outputs = self
+            .gpio
+            .output
+            .iter()
+            .map(|gpio| (gpio.pin, gpio.port))
+            .collect::<Vec<(Pin, Port)>>();
+        let pwm = self
+            .pwm
+            .iter()
+            .map(|pwm| pwm.pins.clone())
+            .flatten()
+            .collect::<Vec<(Pin, Port)>>();
+        let serial = self
+            .serial
+            .iter()
+            .map(|serial| vec![serial.tx, serial.rx])
+            .flatten()
+            .collect::<Vec<(Pin, Port)>>();
+        inputs.extend_from_slice(&outputs);
+        inputs.extend_from_slice(&pwm);
+        inputs.extend_from_slice(&serial);
+        inputs
+    }
+}
+
+#[derive(Debug)]
+pub struct Serial {
+    id: SerialID,
+    rx: (Pin, Port),
+    tx: (Pin, Port),
+    baud_rate: Baud,
+}
+#[derive(Debug)]
+enum SerialID {
+    Usart1,
+    Usart2,
+    Usart3,
+}
+
+impl Serial {
+    fn from_yaml(yaml: &Yaml) -> Self {
+        let config = yaml.as_hash().expect("Unexpected input serial format");
+        let mut serial_name = None;
+        for entry in config {
+            match entry {
+                (Yaml::String(k), Yaml::Null) => match serial_name {
+                    Some(_) => unreachable!(),
+                    None => {
+                        serial_name = Some(k);
+                        break;
+                    }
+                },
+                _ => {}
+            }
+        }
+        Self {
+            id: SerialID::from_str(&serial_name.expect("Unknown serial ID")),
+            rx: Gpio::parse_pin(&Some(
+                yaml["rx"].as_str().expect("Missing 'rx' gpio in serial"),
+            )),
+            tx: Gpio::parse_pin(&Some(
+                yaml["tx"].as_str().expect("Missing 'tx' gpio in serial"),
+            )),
+            baud_rate: Baud::from_i64(
+                yaml["baud"]
+                    .as_i64()
+                    .expect("Missing 'baud' rate in serial"),
+            ),
+        }
+    }
+}
+
+impl SerialID {
+    fn from_str(str: &str) -> Self {
+        match str.to_lowercase().as_str() {
+            "usart1" => Self::Usart1,
+            "usart2" => Self::Usart2,
+            "usart3" => Self::Usart3,
+            other => panic!("Unknown serial name '{:?}'", other),
         }
     }
 }
@@ -49,7 +152,7 @@ impl Stm32f1xxPeripherals {
 #[derive(Debug)]
 pub struct PWM {
     timer: Timer,
-    pins: Vec<(usize, Port)>,
+    pins: Vec<(Pin, Port)>,
     frequency: Option<Hertz>,
 }
 
@@ -116,7 +219,7 @@ struct Gpios {
 }
 #[derive(Clone, Copy, Debug)]
 pub struct Gpio {
-    pin: usize,
+    pin: Pin,
     port: Port,
     mode: PinMode,
     interrupt_mode: InterruptMode,
@@ -200,7 +303,7 @@ impl Gpio {
             interrupt_mode: InterruptMode::None,
         }
     }
-    fn parse_pin(key: &Option<&str>) -> (usize, Port) {
+    fn parse_pin(key: &Option<&str>) -> (Pin, Port) {
         let string = key.expect("could not parse pin name").to_lowercase();
         let string = match string.strip_prefix("p") {
             Some(s) => s,
@@ -208,7 +311,7 @@ impl Gpio {
         };
         let (port, pin) = string.split_at(1);
         (
-            pin.parse::<usize>().expect("Unable to parse pin number"),
+            Pin(pin.parse::<usize>().expect("Unable to parse pin number")),
             match port {
                 "a" => Port::A,
                 "b" => Port::B,
@@ -222,12 +325,55 @@ impl Gpio {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub struct Pin(usize);
+
+impl Pin {
+    fn control_reg(&self) -> &str {
+        if (self.0 % 16) < 8 {
+            "crl"
+        } else {
+            "crh"
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Port {
     A,
     B,
     C,
     D,
     E,
+}
+
+impl Port {
+    fn lower(&self) -> &str {
+        match self {
+            Port::A => "gpioa",
+            Port::B => "gpiob",
+            Port::C => "gpioc",
+            Port::D => "gpiod",
+            Port::E => "gpioe",
+        }
+    }
+    fn upper(&self) -> &str {
+        match self {
+            Port::A => "GPIOA",
+            Port::B => "GPIOB",
+            Port::C => "GPIOC",
+            Port::D => "GPIOD",
+            Port::E => "GPIOE",
+        }
+    }
+    fn short(&self) -> char {
+        match self {
+            Port::A => 'a',
+            Port::B => 'b',
+            Port::C => 'c',
+            Port::D => 'd',
+            Port::E => 'e',
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -239,12 +385,37 @@ pub enum PinMode {
     OutputOpenDrain,
 }
 
+impl PinMode {
+    fn init_function_name(&self) -> &str {
+        match self {
+            PinMode::InputFloating => "into_floating_input",
+            PinMode::InputPullUp => "into_pull_up_input",
+            PinMode::InputPullDown => "into_pull_down_input",
+            PinMode::OutputPushPull => "into_open_drain_output",
+            PinMode::OutputOpenDrain => "into_push_pull_output",
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum InterruptMode {
     None,
     Rising,
     Falling,
     RisingFalling,
+}
+
+impl InterruptMode {
+    fn ident(&self) -> &str {
+        match self {
+            InterruptMode::None => {
+                panic!("InterruptMode::None cannot be converted into an identifier")
+            }
+            InterruptMode::Rising => "stm32f1xx_hal::gpio::Edge::RISING",
+            InterruptMode::Falling => "stm32f1xx_hal::gpio::Edge::FALLING",
+            InterruptMode::RisingFalling => "stm32f1xx_hal::gpio::Edge::RISING_FALLING",
+        }
+    }
 }
 
 fn config_to_impl(config: &DeviceConfig) -> Vec<syn::Stmt> {

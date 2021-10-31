@@ -18,6 +18,16 @@ enum DeviceKind {
     Stm32f1xx(Stm32f1xxPeripherals),
 }
 
+#[derive(Debug, Copy, Clone)]
+pub struct Baud(pub u32);
+impl Baud {
+    pub fn from_str(str: &str) -> Self {
+        Self(str.parse::<u32>().expect("Unable to parse baud rate"))
+    }
+    pub fn from_i64(int: i64) -> Self {
+        Self(int as u32)
+    }
+}
 #[derive(Debug)]
 struct Hertz(usize);
 
