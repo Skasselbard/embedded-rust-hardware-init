@@ -324,7 +324,7 @@ impl Gpio {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Pin(usize);
 
 impl Pin {
@@ -337,7 +337,7 @@ impl Pin {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum Port {
     A,
     B,
@@ -376,7 +376,7 @@ impl Port {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum PinMode {
     InputFloating,
     InputPullUp,
@@ -393,6 +393,24 @@ impl PinMode {
             PinMode::InputPullDown => "into_pull_down_input",
             PinMode::OutputPushPull => "into_open_drain_output",
             PinMode::OutputOpenDrain => "into_push_pull_output",
+        }
+    }
+    fn direction_name(&self) -> &str {
+        match self {
+            PinMode::InputFloating => "Input",
+            PinMode::InputPullUp => "Input",
+            PinMode::InputPullDown => "Output",
+            PinMode::OutputPushPull => "Output",
+            PinMode::OutputOpenDrain => "Output",
+        }
+    }
+    fn mode_name(&self) -> &str {
+        match self {
+            PinMode::InputFloating => "Floating",
+            PinMode::InputPullUp => "PullUp",
+            PinMode::InputPullDown => "PullDown",
+            PinMode::OutputPushPull => "OpenDrain",
+            PinMode::OutputOpenDrain => "PushPull",
         }
     }
 }

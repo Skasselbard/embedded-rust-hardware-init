@@ -28,7 +28,7 @@ impl Baud {
         Self(int as u32)
     }
 }
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Clone, Copy)]
 struct Hertz(usize);
 
 impl Hertz {

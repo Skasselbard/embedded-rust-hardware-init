@@ -1,15 +1,46 @@
 use std::{collections::HashSet, fmt::format};
 
-use syn::parse_quote;
+use quote::format_ident;
+use syn::{parse_quote, parse_str, Stmt};
 
 use crate::device::{
     stm32f1xx::{InterruptMode, PinMode},
-    Hertz,
+    DeviceConfig, Hertz,
 };
 
 use super::{Gpio, Pin, Port};
 
 type Identifier = String;
+
+pub trait InitializedComponent {
+    fn ty(&self) -> syn::Type;
+    fn identifier(&self) -> &str;
+}
+
+#[derive(Debug, PartialEq, Eq, Hash)]
+pub struct InitializedGpio {
+    pin: Pin,
+    port: Port,
+    mode: PinMode,
+    id: String,
+}
+
+impl InitializedComponent for InitializedGpio {
+    fn ty(&self) -> syn::Type {
+        let port_name = self.port.lower();
+        let pin_type = gpio_ident(self.pin, self.port).to_lowercase();
+        let direction = self.mode.direction_name();
+        let mode = self.mode.mode_name();
+        parse_str(&format!(
+            "stm32f1xx_hal::gpio::{}::{}<stm32f1xx_hal::gpio::{}<stm32f1xx_hal::gpio::{}>>",
+            port_name, pin_type, direction, mode
+        ))
+        .unwrap()
+    }
+    fn identifier(&self) -> &str {
+        &self.id
+    }
+}
 
 struct DeviceInit {
     init_block: Vec<syn::Stmt>,
@@ -112,7 +143,7 @@ impl DeviceInit {
         }
         .to_string()
     }
-    fn gpios(&mut self, gpios: Vec<(Pin, Port)>) -> &HashSet<String> {
+    fn gpios(&mut self, gpios: Vec<(Pin, Port)>) -> &HashSet<Identifier> {
         if self.gpios.is_none() {
             let rcc_ident = self.rcc();
             let peripherals_ident = &self.peripherals;
@@ -142,7 +173,7 @@ impl DeviceInit {
         }
         self.gpios.as_ref().unwrap()
     }
-    fn inputs(&mut self, inputs: Vec<Gpio>) -> HashSet<String> {
+    fn inputs(&mut self, inputs: &Vec<Gpio>) -> HashSet<InitializedGpio> {
         let mut idents = HashSet::new();
         let gpio_pool = self
             .gpios
@@ -175,17 +206,22 @@ impl DeviceInit {
                     ));
                 }
             }
-            idents.insert(gpio_ident);
+            idents.insert(InitializedGpio {
+                pin: gpio.pin,
+                port: gpio.port,
+                id: gpio_ident,
+                mode: gpio.mode,
+            });
         }
         idents
     }
-    fn outputs(&mut self, inputs: Vec<Gpio>) -> HashSet<String> {
+    fn outputs(&mut self, outputs: &Vec<Gpio>) -> HashSet<InitializedGpio> {
         let mut idents = HashSet::new();
         let gpio_pool = self
             .gpios
             .as_mut()
             .expect("Ports and gpios are not initialized");
-        for gpio in inputs {
+        for gpio in outputs {
             let port_ident = gpio.port.lower();
             let gpio_ident = gpio_pool
                 .take(&gpio_ident(gpio.pin, gpio.port))
@@ -196,8 +232,27 @@ impl DeviceInit {
             self.init_block.push(parse_quote!(
                 let mut #gpio_ident = #port_ident.#pin_name.#init_function_name(&mut #port_ident.#control_reg);
             ));
-            idents.insert(gpio_ident);
+            idents.insert(InitializedGpio {
+                pin: gpio.pin,
+                port: gpio.port,
+                id: gpio_ident,
+                mode: gpio.mode,
+            });
         }
         idents
+    }
+
+    pub fn get_init_block(config: &DeviceConfig) -> Vec<Stmt> {
+        let peripheral_config = match &config.kind {
+            crate::device::DeviceKind::Stm32f1xx(pc) => pc,
+            _ => panic!("Tried to build stm32f1xx config from other device kind"),
+        };
+        let mut device_init = DeviceInit::new();
+        device_init.clocks(config.clock);
+        device_init.gpios(peripheral_config.used_gpios());
+        let inputs = device_init.inputs(&peripheral_config.gpio.input);
+        let outputs = device_init.outputs(&peripheral_config.gpio.output);
+        todo!(); //TODO: add init and return statements
+        device_init.init_block
     }
 }
