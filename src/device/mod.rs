@@ -4,6 +4,8 @@ use yaml_rust::Yaml;
 
 use stm32f1xx::Stm32f1xxPeripherals;
 
+use self::stm32f1xx::init_stmts_and_return_tys;
+
 mod stm32f1xx;
 
 #[derive(Debug)]
@@ -67,12 +69,14 @@ impl DeviceConfig {
             other => panic!("Unknown device kind \"{}\"", other),
         };
         let clock = yaml["clock"].as_str().map(|c| Hertz::from_str(c));
-        panic!(
-            "{:?}",
-            Self {
-                kind,
-                clock: clock.expect("Unable to parse clock"),
-            }
-        )
+        Self {
+            kind,
+            clock: clock.expect("Unable to parse clock"),
+        }
+    }
+    pub(crate) fn get_init_fn(&self) -> (Vec<syn::Stmt>, syn::Type) {
+        match self.kind {
+            DeviceKind::Stm32f1xx(_) => init_stmts_and_return_tys(&self),
+        }
     }
 }

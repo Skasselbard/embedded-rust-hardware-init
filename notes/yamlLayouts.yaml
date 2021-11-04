@@ -1,34 +1,15 @@
-# current
-Stm32f1xx:
-  sys:
-    heap_size: [10, "kb"]
-    sys_clock: [36, "mhz"]
-  gpios:
-    - ["PA0", "input", "pull_up", "falling"]
-    - ["PC13", "output", "push_pull"]
-  pwm:
-    - timer: "Tim2"
-      pins: ["PA1"]
-      frequency: [10, "khz"]
-  serial:
-    - usart1:
-        tx: "PB6"
-        rx: "PB7"
-        baud: 9600
-
----
 kind: stm32f1xx
 clock: 36mhz
 gpio: #default []
   input: # default []
     - pa0:
-      kind: pull_up # no default, not optional
+      mode: pull_up # no default, not optional
       interrupt: falling #rising, both, none optional
     - pa2:
-      kind: pull_down
+      mode: pull_down
       interrupt: none
     - pa3:
-      kind: floating
+      mode: floating
       interrupt: none
   output:
     pc13: push_pull # no default, not optional
@@ -44,6 +25,6 @@ pwm: # default [], optional
     duty: 75% # optional for initial state
 serial:
   - usart1:
-      tx: pb6
-      rx: pb7
-      baud: 9600
+    tx: pb6
+    rx: pb7
+    baud: 9600

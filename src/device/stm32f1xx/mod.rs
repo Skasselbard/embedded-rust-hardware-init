@@ -1,7 +1,10 @@
 use core::panic;
+use syn::parse_quote;
 use yaml_rust::Yaml;
 
 mod generation;
+
+use self::generation::DeviceInit;
 
 use super::{Baud, DeviceConfig, Hertz};
 
@@ -429,13 +432,15 @@ impl InterruptMode {
             InterruptMode::None => {
                 panic!("InterruptMode::None cannot be converted into an identifier")
             }
-            InterruptMode::Rising => "stm32f1xx_hal::gpio::Edge::RISING",
-            InterruptMode::Falling => "stm32f1xx_hal::gpio::Edge::FALLING",
-            InterruptMode::RisingFalling => "stm32f1xx_hal::gpio::Edge::RISING_FALLING",
+            InterruptMode::Rising => "RISING",
+            InterruptMode::Falling => "FALLING",
+            InterruptMode::RisingFalling => "RISING_FALLING",
         }
     }
 }
 
-fn config_to_impl(config: &DeviceConfig) -> Vec<syn::Stmt> {
-    todo!()
+pub(super) fn init_stmts_and_return_tys(
+    config: &DeviceConfig,
+) -> (Vec<syn::Stmt>, syn::Type) {
+    DeviceInit::get_init_block(config)
 }
