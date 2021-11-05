@@ -76,6 +76,7 @@ impl DeviceInit {
         let flash = format_ident!("flash");
         let init_block = parse_quote!(
             use stm32f1xx_hal::prelude::*;
+            use stm32f1xx_hal::gpio::ExtiPin;
             let #peripherals = stm32f1xx_hal::pac::Peripherals::take().unwrap();
             let mut #flash = #peripherals.FLASH.constrain();
         );
@@ -128,7 +129,7 @@ impl DeviceInit {
     }
     fn clocks(&mut self, clock: Hertz) -> Ident {
         if self.clocks.is_none() {
-            let freq = clock.0;
+            let freq = clock.0 as u32;
             let cfgr_ident = self.cfgr();
             let flash_ident = &self.flash;
             let clocks_ident = format_ident!("clocks");
@@ -147,8 +148,7 @@ impl DeviceInit {
             let rcc_ident = self.rcc();
             let peripherals_ident = &self.peripherals;
             // First initialize the gpio ports
-            let mut ports = gpios.iter().map(|(_, port)| port).collect::<Vec<&Port>>();
-            ports.dedup();
+            let ports: HashSet<&Port> = gpios.iter().map(|(_, port)| port).collect();
             for port in ports {
                 let port_lower = format_ident!("{}", port.lower());
                 let port_upper = format_ident!("{}", port.upper());
@@ -156,7 +156,7 @@ impl DeviceInit {
                 // its always apb2 on this boards
                 self.init_block.push(parse_quote!(
                 let mut #port_lower = #peripherals_ident.#port_upper.split(&mut #rcc_ident.apb2);
-            ))
+                ))
             }
             // remember all gpios and check for duplicates
             let mut gpios_idents = HashSet::new();
@@ -303,11 +303,11 @@ impl DeviceInit {
         ));
         let return_types = parse_quote!(
             (
-                (#(#in_tys,)*),
-                (#(#out_tys,)*),
-                (#(#timer_tys,)*),
-                (#(#pwm_tys,)*),
-                (#(#serial_tys,)*),
+                &'static mut (#(#in_tys,)*),
+                &'static mut (#(#out_tys,)*),
+                &'static mut (#(#timer_tys,)*),
+                &'static mut (#(#pwm_tys,)*),
+                &'static mut (#(#serial_tys,)*),
             )
         );
         (stmts, return_types)

@@ -68,5 +68,5 @@ fn generate_test() {
     let mut path = project_root::get_project_root().expect("Unable to find project root");
     path.push("notes/yamlLayouts.yaml");
     let config = parse_yaml(&path);
-    let (init_statements, return_type) = config.get_init_fn("test_struct");
+    let (init_statements, return_type) = config.get_init_fn();
 }

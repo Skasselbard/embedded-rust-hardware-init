@@ -12,8 +12,8 @@ gpio: #default []
       mode: floating
       interrupt: none
   output:
-    pc13: push_pull # no default, not optional
-    pc12: open_drain
+    - pc13: push_pull # no default, not optional
+    - pc12: open_drain
 timer: # default [], optional
   - Tim1
   - Tim3

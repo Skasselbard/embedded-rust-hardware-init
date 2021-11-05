@@ -402,7 +402,7 @@ impl PinMode {
         match self {
             PinMode::InputFloating => "Input",
             PinMode::InputPullUp => "Input",
-            PinMode::InputPullDown => "Output",
+            PinMode::InputPullDown => "Input",
             PinMode::OutputPushPull => "Output",
             PinMode::OutputOpenDrain => "Output",
         }
@@ -439,8 +439,6 @@ impl InterruptMode {
     }
 }
 
-pub(super) fn init_stmts_and_return_tys(
-    config: &DeviceConfig,
-) -> (Vec<syn::Stmt>, syn::Type) {
+pub(super) fn init_stmts_and_return_tys(config: &DeviceConfig) -> (Vec<syn::Stmt>, syn::Type) {
     DeviceInit::get_init_block(config)
 }
